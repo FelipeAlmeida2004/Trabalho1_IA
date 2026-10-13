@@ -75,17 +75,41 @@ poetry install
 
 O Poetry cria um ambiente virtual e instala as dependências travadas no `poetry.lock`.
 
+## Acessando o ambiente virtual
+
+As dependências (como o `janus-swi`) ficam instaladas no ambiente virtual criado pelo Poetry, e **não** no Python do sistema. Por isso é necessário acessar esse ambiente antes de executar o projeto; do contrário, o import falha com `ModuleNotFoundError`.
+
+1. Exiba o comando de ativação:
+
+```bash
+poetry env activate
+```
+
+2. Copie e execute a linha que o comando imprimir. No PowerShell, ela tem a forma `& "C:\...\Scripts\activate.ps1"`.
+
+3. Com o ambiente ativo, o terminal mostra o nome dele no início da linha e `python` passa a usar as dependências do projeto. Para sair, use `deactivate`.
+
+Se preferir não ativar o ambiente, coloque `poetry run` antes de cada comando (veja abaixo).
+
+**VS Code:** selecione o interpretador do ambiente com `Ctrl+Shift+P` → `Python: Select Interpreter` → `trabalho1-ia-...-py3.12`. Sem isso, o editor usa o Python do sistema e sublinha o import como não reconhecido.
+
 ## Execução
+
+Com o ambiente virtual ativo:
+
+```bash
+python main.py
+```
+
+Ou, sem ativar, usando o Poetry:
 
 ```bash
 poetry run python main.py
 ```
 
-Para trabalhar dentro do ambiente virtual sem repetir `poetry run`, exiba o comando de ativação com `poetry env activate` e execute o comando que ele imprimir.
-
 ## Verificando a instalação
 
-O comando abaixo deve imprimir `True` se o Python conseguir conversar com o SWI-Prolog:
+Com o ambiente virtual ativo (ou usando `poetry run`), o comando abaixo deve imprimir `True` se o Python conseguir conversar com o SWI-Prolog:
 
 ```bash
 poetry run python -c "import janus_swi as janus; print(janus.query_once('X = 1')['truth'])"
