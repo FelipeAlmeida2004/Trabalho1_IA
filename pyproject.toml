@@ -1,0 +1,17 @@
+[project]
+name = "trabalho1-ia"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Felipe Gabriel",email = "fesenapeschi2013@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "janus-swi (>=1.5.3,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
