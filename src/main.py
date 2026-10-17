@@ -1,8 +1,5 @@
 
-import janus_swi as janus
-
-def main():
-    print("Olá")
+from interface.main_view import main
 
 
 if __name__ == "__main__":
