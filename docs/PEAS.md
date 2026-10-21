@@ -2,7 +2,7 @@
 
 ## Agente
 
-Agente de triagem e distribuição hospitalar, baseado em objetivo. Parte de uma fila de espera com todos os pacientes e médicos sem pacientes atribuídos, e modifica esse estado por busca cega até obter uma distribuição válida, com a lista ordenada de pacientes de cada médico.
+Agente de triagem e distribuição hospitalar, baseado em objetivo. O problema se comporta como um cubo mágico: parte-se de um estado inicial **inválido** (todos os pacientes na fila de espera e a lista de cada médico vazia) e o estado é modificado, passo a passo e por busca cega, até se chegar a um estado **válido**, com a lista ordenada de pacientes de cada médico.
 
 ## P — Medida de desempenho
 
@@ -25,8 +25,8 @@ Critérios secundários:
 Um hospital com:
 
 - **Médicos** (inicialmente 2, mas em quantidade arbitrária), cada um com uma ou mais especialidades. Uma especialidade pode ser marcada como de atendimento geral.
-- **Pacientes**, cada um com um nível de risco (`baixa`, `media`, `alta`) e uma lista de grupos de prioridade (`idoso`, `crianca`, `gestante`, `deficiente`, ou `geral` quando não há condição especial).
-- **Fila de espera inicial** com todos os pacientes e médicos com as listas vazias.
+- **Pacientes**, cada um com um nível de risco (`baixa`, `media`, `alta`) e uma lista de grupos de prioridade (`idoso`, `crianca`, `gestante`, `deficiente`, ou `geral` quando não há condição especial; `geral` nunca aparece junto de outro grupo).
+- **Fila de espera inicial** com todos os pacientes, na ordem em que foram cadastrados, e médicos com as listas vazias.
 - **Regra de atendimento:** cada médico atende um paciente por vez, na ordem da sua lista, e no máximo `L` pacientes.
 
 Propriedades do ambiente:
@@ -43,30 +43,50 @@ Propriedades do ambiente:
 ## A — Atuadores
 
 - **Atribuir** o primeiro paciente da fila de espera a um médico compatível com vaga, inserindo-o na posição que mantém a lista em ordem de prioridade.
-- **Exibir** a lista ordenada de cada médico quando o estado válido é alcançado.
+- **Exibir** a lista ordenada de cada médico quando o estado válido é alcançado (tela 2D em Arcade: fila de espera à esquerda e uma linha de vagas por médico).
 
 ## S — Sensores
 
-O agente lê a base de fatos e o estado corrente:
+O agente lê a base de fatos (`src/facts.pl`) e o estado corrente:
 
-- Médicos, suas especialidades e a marcação de quem é generalista.
-- Perfis das especialidades (risco e grupo atendidos).
-- Pacientes, com risco e grupos.
-- Tabelas de peso de risco e de grupo.
-- O limite de atendimentos.
-- O estado atual: fila de espera e lista de cada médico.
+| Fato | Conteúdo |
+|---|---|
+| `medico(idM, nome, [espec])` | Médicos e suas especialidades |
+| `generalista(espec)` | Especialidades de atendimento geral |
+| `perfil(espec, risco, grupo)` | Combinações de risco e grupo que cada especialidade atende |
+| `paciente(idP, nome, risco, [grupos])` | Pacientes, na ordem da fila de espera |
+| `taxa_critica(risco, peso)` | Peso de cada risco |
+| `grupo_critico(grupo, peso)` | Peso de cada grupo |
+| `limite_minimo(valor)` | Valor mínimo do limite de atendimentos |
+
+E também o estado atual: a fila de espera e a lista de cada médico.
 
 ## Formulação do problema de busca
 
 | Elemento | Definição |
 |---|---|
-| **Estado** | A fila de espera e, para cada médico, a lista ordenada dos pacientes atribuídos a ele |
-| **Estado inicial** | Fila de espera com todos os pacientes; a lista de cada médico vazia |
+| **Estado** | A fila de espera e, para cada médico, a lista ordenada dos pacientes atribuídos a ele. A ordem de cada lista faz parte do estado: os mesmos pacientes em ordens diferentes são estados diferentes |
+| **Estado inicial** | Fila de espera com todos os pacientes; a lista de cada médico vazia (estado inválido) |
 | **Ações** | Atribuir o primeiro paciente da fila de espera a um médico que (a) seja compatível e (b) tenha menos pacientes que o limite |
 | **Modelo de transição** | O paciente sai da fila de espera e entra na lista do médico, na posição que preserva a ordem de prioridade |
 | **Teste de objetivo** | A fila de espera está vazia |
 | **Custo de passo** | 1 por atribuição (busca cega: nenhum custo ou heurística guia a busca) |
+| **Estratégia de busca** | Busca em largura: expande todos os estados de um nível antes de passar ao seguinte. Como cada ação atribui um paciente, toda solução está no nível igual ao número de pacientes |
 | **Solução** | A sequência de atribuições, que resulta na lista de cada médico |
+
+A compatibilidade e o limite são verificados **na ação**: uma atribuição inválida nunca gera um estado, então todo estado alcançado já respeita as regras e o teste de objetivo só precisa conferir que a fila de espera esvaziou.
+
+## Analogia com o cubo mágico
+
+| Cubo mágico | Hospital |
+|---|---|
+| Cubo embaralhado | Fila de espera cheia e médicos sem pacientes |
+| Giro de uma face | Atribuição de um paciente a um médico |
+| Desfazer um giro | Retrocesso (backtracking) para tentar outro médico |
+| Cubo resolvido | Fila vazia e listas válidas e ordenadas |
+| Busca cega | Nenhuma heurística ou custo guia a escolha das ações (busca em largura) |
+
+Diferença em relação ao cubo: lá existe um único estado final, aqui existem vários estados válidos (por exemplo, pacientes de mesma prioridade podem trocar de posição). A busca para no primeiro que encontrar.
 
 ## Definições auxiliares
 
@@ -92,12 +112,44 @@ prioridade(paciente) = peso_risco(risco) + max(peso_grupo(g) para g em grupos)
 **Limite de atendimentos `L`.** Parâmetro do cenário, com mínimo de 5 e crescimento conforme o tamanho do problema:
 
 ```
-L = max(5, ceil(numero_de_pacientes / numero_de_medicos))
+L = max(limite_minimo, ceil(numero_de_pacientes / numero_de_medicos))
 ```
 
-## Premissas e decisões em aberto
+## Cenário de referência
+
+2 médicos (`m1` generalista com `clinico_geral`; `m2` com `pediatra` e `geriatra`) e 8 pacientes, `L = 5`.
+
+| Paciente | Risco | Grupos | Prioridade | Quem atende |
+|---|---|---|---|---|
+| p1 | `baixa` | `[crianca]` | 5 | m2 |
+| p2 | `media` | `[idoso]` | 5 | m2 |
+| p3 | `baixa` | `[geral]` | 2 | m1 |
+| p4 | `baixa` | `[crianca]` | 5 | m2 |
+| p5 | `media` | `[gestante]` | 7 | m1 (nenhum obstetra cadastrado) |
+| p6 | `media` | `[idoso]` | 5 | m2 |
+| p7 | `baixa` | `[crianca]` | 5 | m2 |
+| p8 | `baixa` | `[crianca]` | 5 | m2 cheio, vai para m1 |
+
+Resultado esperado, com os pacientes saindo da fila de espera na ordem p1 a p8:
+
+- `m1`: `[p5, p8, p3]`
+- `m2`: `p1, p2, p4, p6, p7`, em qualquer ordem (todos com prioridade 5)
+
+Com `L = 6`, m2 comportaria p8 e m1 ficaria só com `[p5, p3]`. Com `L = 4`, p7 e p8 transbordam para m1.
+
+## Premissas e decisões
+
+Decididas:
 
 - O tempo de atendimento, a hora de entrada e o tempo máximo de espera não são modelados neste trabalho.
-- A estratégia de busca (em largura ou em profundidade) ainda precisa ser escolhida.
+- O generalista é verificado no momento da ação, e não no teste de objetivo.
+- Pacientes de prioridade igual podem ficar em qualquer ordem.
+- O grupo `geral` é exclusivo e não funciona como coringa nos perfis.
+- A estratégia de busca é a busca em largura.
+- A ordem dos pacientes na lista de cada médico importa: ela é exigida pela prioridade e faz parte do estado.
+- A ordem inicial da fila de espera não importa: ela segue a ordem dos fatos `paciente/4` e qualquer ordem é aceita. Como a regra do generalista depende de quem já foi atribuído, essa ordem pode mudar quem transborda para o generalista, mas toda distribuição válida é uma resposta correta.
+
+Em aberto:
+
 - A fórmula do limite `L` é a proposta atual e pode ser substituída por um valor fixo.
 - Se não há distribuição válida (por exemplo, mais pacientes do que a soma das capacidades), a busca esgota os estados e termina sem solução.
