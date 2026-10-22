@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from collections import deque
+from queue import Empty, SimpleQueue
+from threading import Thread
+from textwrap import wrap
+import traceback
 from typing import TYPE_CHECKING
 
 import arcade
 
 try:
+    from .prolog_bridge import initialize_prolog, solve_scenario
     from .scenario import GROUP_INITIALS, Doctor, Patient, build_scenario
 except ImportError:  # executado como script, fora do pacote
+    from prolog_bridge import initialize_prolog, solve_scenario
     from scenario import GROUP_INITIALS, Doctor, Patient, build_scenario
 
 if TYPE_CHECKING:
@@ -37,9 +44,13 @@ TOKEN_TEXT_COLOR = arcade.color.BLACK
 
 BACK_BUTTON_COLOR = arcade.color.DARK_RED
 BACK_BUTTON_CENTER_X = 830
-BACK_BUTTON_CENTER_Y = 225
+BACK_BUTTON_CENTER_Y = 165
 BACK_BUTTON_WIDTH = 150
 BACK_BUTTON_HEIGHT = 52
+
+SOLVE_BUTTON_CENTER_Y = 225
+SOLVE_BUTTON_COLOR = arcade.color.DARK_GREEN
+ANIMATION_INTERVAL = 0.4
 
 Hotspot = tuple[float, float, float, float, list[str]]
 
@@ -76,6 +87,15 @@ class SimulationView(arcade.View):
         self._mouse_y = -1.0
         self._hotspots: list[Hotspot] = []
         self._text_cache: dict[tuple, arcade.Text] = {}
+        self._results: SimpleQueue = SimpleQueue()
+        self._searching = False
+        self._frames: deque = deque()
+        self._animation_elapsed = 0.0
+        self._status = "Cenario viavel. Clique em RESOLVER."
+        self._statistics: tuple[int, int] | None = None
+        self._patients = {
+            patient.patient_id: patient for patient in self.scenario.waiting
+        }
 
     def _draw_text(
         self,
@@ -339,9 +359,22 @@ class SimulationView(arcade.View):
                 panel_x,
                 y,
                 SECONDARY_TEXT_COLOR,
-                16 if y >= 330 else 14,
+                12 if y == 330 else 14,
                 anchor_x="center",
             )
+        can_solve = self._can_solve()
+        arcade.draw_rect_filled(
+            arcade.XYWH(
+                panel_x, SOLVE_BUTTON_CENTER_Y,
+                BACK_BUTTON_WIDTH, BACK_BUTTON_HEIGHT,
+            ),
+            SOLVE_BUTTON_COLOR if can_solve else GRID_COLOR,
+        )
+        self._draw_text(
+            "BUSCANDO..." if self._searching else "RESOLVER",
+            panel_x, SOLVE_BUTTON_CENTER_Y - 9,
+            TEXT_COLOR, 16, anchor_x="center",
+        )
         arcade.draw_rect_filled(
             arcade.XYWH(
                 BACK_BUTTON_CENTER_X,
@@ -354,11 +387,92 @@ class SimulationView(arcade.View):
         arcade.draw_text(
             "VOLTAR",
             panel_x,
-            216,
+            BACK_BUTTON_CENTER_Y - 9,
             TEXT_COLOR,
             16,
             anchor_x="center",
         )
+        for index, line in enumerate(wrap(self._status, width=26)):
+            self._draw_text(
+                line, panel_x, 120 - index * 16,
+                SECONDARY_TEXT_COLOR, 10, anchor_x="center",
+            )
+        if self._statistics is not None:
+            generated, expanded = self._statistics
+            self._draw_text(
+                f"Gerados: {generated}", panel_x, 35,
+                SECONDARY_TEXT_COLOR, 10, anchor_x="center",
+            )
+            self._draw_text(
+                f"Expandidos: {expanded}", panel_x, 19,
+                SECONDARY_TEXT_COLOR, 10, anchor_x="center",
+            )
+
+    def _can_solve(self) -> bool:
+        return (
+            not self._searching
+            and not self._frames
+            and bool(self.scenario.waiting)
+            and not any(doctor.queue for doctor in self.scenario.doctors)
+        )
+
+    def _start_search(self) -> None:
+        if not self._can_solve():
+            return
+        try:
+            initialize_prolog()
+        except Exception as error:
+            traceback.print_exc()
+            self._status = str(error)
+            return
+        self._searching = True
+        self._statistics = None
+        self._status = "Buscando uma distribuicao..."
+        Thread(target=self._search_worker, daemon=True).start()
+
+    def _search_worker(self) -> None:
+        try:
+            result = solve_scenario(self.scenario)
+        except Exception as error:
+            traceback.print_exc()
+            self._results.put(("error", str(error)))
+        else:
+            self._results.put(("result", result))
+
+    def on_update(self, delta_time: float) -> None:
+        # Somente a thread da interface altera os objetos desenhados.
+        try:
+            kind, result = self._results.get_nowait()
+        except Empty:
+            pass
+        else:
+            self._searching = False
+            if kind == "error":
+                self._status = result
+            elif result is None:
+                self._status = "Sem solucao neste cenario."
+            else:
+                self._statistics = (result["generated"], result["expanded"])
+                self._frames = deque(result["frames"])
+                self._animation_elapsed = 0.0
+                self._status = "Distribuindo pacientes..."
+
+        if self._frames:
+            self._animation_elapsed += delta_time
+            if self._animation_elapsed >= ANIMATION_INTERVAL:
+                self._animation_elapsed = 0.0
+                frame = self._frames.popleft()
+                self._apply_frame(frame)
+
+    def _apply_frame(self, frame: dict) -> None:
+        self.scenario.waiting = [self._patients[pid] for pid in frame["espera"]]
+        queues = dict(frame["filas"])
+        for doctor in self.scenario.doctors:
+            doctor.queue = [self._patients[pid] for pid in queues[doctor.doctor_id]]
+        if self._frames:
+            self._status = f"{frame['paciente']} para {frame['medico']}."
+        else:
+            self._status = "Distribuicao concluida!"
 
     def _draw_tooltip(self) -> None:
         for left, bottom, right, top, lines in self._hotspots:
@@ -397,6 +511,8 @@ class SimulationView(arcade.View):
     def on_key_press(self, symbol: int, _modifiers: int) -> None:
         if symbol == arcade.key.ESCAPE:
             self._go_back()
+        elif symbol == arcade.key.SPACE:
+            self._start_search()
 
     def on_mouse_press(
         self,
@@ -405,6 +521,15 @@ class SimulationView(arcade.View):
         button: int,
         _modifiers: int,
     ) -> None:
+        if (
+            button == arcade.MOUSE_BUTTON_LEFT
+            and BACK_BUTTON_CENTER_X - BACK_BUTTON_WIDTH / 2 <= x
+            <= BACK_BUTTON_CENTER_X + BACK_BUTTON_WIDTH / 2
+            and SOLVE_BUTTON_CENTER_Y - BACK_BUTTON_HEIGHT / 2 <= y
+            <= SOLVE_BUTTON_CENTER_Y + BACK_BUTTON_HEIGHT / 2
+        ):
+            self._start_search()
+            return
         if (
             button == arcade.MOUSE_BUTTON_LEFT
             and BACK_BUTTON_CENTER_X - BACK_BUTTON_WIDTH / 2 <= x

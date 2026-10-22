@@ -98,14 +98,64 @@ Se preferir não ativar o ambiente, coloque `poetry run` antes de cada comando (
 Com o ambiente virtual ativo:
 
 ```bash
-python main.py
+python src/main.py
 ```
 
 Ou, sem ativar, usando o Poetry:
 
 ```bash
-poetry run python main.py
+poetry run python src/main.py
 ```
+
+## Busca pela interface
+
+1. Na raiz do projeto, execute `poetry run python src/main.py`.
+2. Escolha as quantidades de médicos e pacientes e clique em **INICIAR SIMULACAO**.
+3. Na tela do cenário, clique em **RESOLVER** ou pressione **Espaço**.
+4. A busca em largura roda em uma thread separada. Quando encontra uma solução,
+   a interface mostra as atribuições uma a uma e atualiza as filas dos médicos.
+5. Use **VOLTAR** para configurar outro cenário.
+
+Os cenários gerados pela interface têm pelo menos uma distribuição válida,
+incluindo a configuração padrão de **2 médicos e 8 pacientes**. A geração usa os
+perfis de `facts.pl` e verifica a capacidade e a regra do generalista a cada novo
+paciente. Todos começam na espera, e a busca em largura encontra a distribuição
+depois do clique em **RESOLVER**.
+
+Ao voltar e iniciar novamente, é feito outro sorteio. Para reproduzir um caso
+em código, use uma semente explícita, por exemplo:
+`build_scenario(2, 8, seed=7)`. A semente usada fica em `scenario.seed`.
+
+Os médicos e pacientes enviados ao Prolog são os mesmos que aparecem na tela,
+gerados por `build_scenario()`. Os fatos fixos de `facts.pl` continuam servindo
+como referência para consultas no terminal; os perfis e pesos desse arquivo são
+usados pela busca. Cada consulta da interface usa um `snapshot`, sem alterar o
+arquivo de fatos nem substituir permanentemente os pacientes de referência.
+
+`src/interface/prolog_bridge.py` chama o Janus com parâmetros estruturados.
+`src/interface_bridge.pl` prepara o cenário e devolve os estados da solução.
+`src/scenario_generation.pl` constrói os cenários aleatórios com cobertura.
+`src/rules.pl` contém as regras e a busca; a interface apenas desenha os estados.
+
+Dados incompatíveis inseridos manualmente ainda podem não ter solução; nesses
+casos, a mensagem permanece correta. Se a busca exceder 15 segundos, aparece uma
+mensagem de tempo excedido, que é diferente de ausência de solução. Esse limite pode ser
+alterado em `SEARCH_TIMEOUT_SECONDS`, no arquivo `prolog_bridge.py`. Erros de
+instalação também são mostrados na tela, com detalhes no terminal.
+
+Leia [a explicação da correção](docs/CORRECAO_CENARIOS.md) para o diagnóstico,
+o método de geração e os resultados dos testes.
+
+## Testes da geração
+
+```bash
+poetry run python -m unittest discover -s tests -v
+```
+
+Os testes usam o Janus e o SWI-Prolog reais. Verificam as 300 configurações da
+interface, 200 sementes na configuração padrão e 60 cenários maiores. Também
+conferem cada atribuição: compatibilidade, capacidade, generalista, ordem da
+espera, prioridade e ausência de pacientes duplicados.
 
 ## Verificando a instalação
 
