@@ -117,6 +117,28 @@ L = max(limite_minimo, ceil(numero_de_pacientes / numero_de_medicos))
 
 ## Cenário de referência
 
+### Geração dos cenários da interface
+
+O cenário de referência abaixo continua definido nos fatos. A interface gera
+outros cenários, com as quantidades escolhidas pelo usuário, garantindo que cada
+um tenha pelo menos uma sequência válida de atribuições.
+
+As especialidades são sorteadas entre as cadastradas em `perfil/3`. Durante a
+construção, cada novo paciente é sorteado apenas entre os perfis que algum médico
+pode receber com a ocupação temporária atual. Essa ocupação é atualizada para a
+próxima escolha, respeitando a regra do generalista e o limite final `L`.
+
+Ao terminar, a ocupação de construção é descartada: todos os pacientes aparecem
+na espera e as filas dos médicos começam vazias. A busca em largura continua
+responsável pela solução; ela não recebe a sequência usada na construção.
+
+O sorteio padrão usa uma nova semente a cada cenário. Uma semente explícita
+permite reproduzir o mesmo caso para testes. A garantia vale para a geração;
+dados externos podem continuar sendo inviáveis, e tempo excedido de busca é
+tratado separadamente de ausência de solução.
+
+### Dados de referência
+
 2 médicos (`m1` generalista com `clinico_geral`; `m2` com `pediatra` e `geriatra`) e 8 pacientes, `L = 5`.
 
 | Paciente | Risco | Grupos | Prioridade | Quem atende |

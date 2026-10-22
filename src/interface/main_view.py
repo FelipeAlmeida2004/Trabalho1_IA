@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from textwrap import wrap
+import traceback
+
 import arcade
 
 try:
@@ -40,6 +43,7 @@ class MainView(arcade.View):
         self.num_doctors = 2
         self.num_patients = 8
         self.background_color = BACKGROUND_COLOR
+        self._status = ""
 
     def on_draw(self) -> None:
         self.clear()
@@ -91,6 +95,11 @@ class MainView(arcade.View):
             12,
             anchor_x="center",
         )
+        for index, line in enumerate(wrap(self._status, width=100)[:2]):
+            arcade.draw_text(
+                line, WINDOW_WIDTH / 2, 85 - index * 18,
+                arcade.color.SALMON, 11, anchor_x="center",
+            )
 
     def _draw_parameter(
         self,
@@ -147,13 +156,18 @@ class MainView(arcade.View):
                 return
 
         if 300 <= x <= 600 and 95 <= y <= 155:
-            self.window.show_view(
-                SimulationView(
+            try:
+                view = SimulationView(
                     num_doctors=self.num_doctors,
                     num_patients=self.num_patients,
                     previous_view=self,
                 )
-            )
+            except Exception as error:
+                traceback.print_exc()
+                self._status = str(error)
+            else:
+                self._status = ""
+                self.window.show_view(view)
 
     def _change_parameter(
         self,

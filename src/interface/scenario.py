@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import random
 from dataclasses import dataclass, field
 
 RISK_WEIGHTS = {"baixa": 1, "media": 2, "alta": 3}
@@ -23,20 +22,7 @@ GROUP_INITIALS = {
 }
 
 GENERALIST_SPECIALTY = "clinico_geral"
-SPECIALTIES = (
-    "traumatologista",
-    "emergencista",
-    "cardiologista",
-    "intensivista",
-    "pediatra",
-    "geriatra",
-    "obstetra",
-    "gastroenterologista",
-    "fisiatra",
-)
-
 MIN_QUEUE_LIMIT = 5
-DEFAULT_SEED = 7
 
 
 @dataclass(frozen=True)
@@ -76,6 +62,7 @@ class Scenario:
     doctors: list[Doctor]
     waiting: list[Patient]
     queue_limit: int
+    seed: int | None = None
 
 
 def queue_limit(num_patients: int, num_doctors: int) -> int:
@@ -86,24 +73,20 @@ def queue_limit(num_patients: int, num_doctors: int) -> int:
 def build_scenario(
     num_doctors: int,
     num_patients: int,
-    seed: int = DEFAULT_SEED,
+    seed: int | None = None,
 ) -> Scenario:
-    """Cria o estado inicial: todos os pacientes na espera, médicos sem pacientes."""
-    rng = random.Random(seed)
+    """Cria uma espera aleatória viável, mantendo vazias as filas dos médicos.
 
-    doctors = [Doctor("m1", (GENERALIST_SPECIALTY,))]
-    for number in range(2, num_doctors + 1):
-        specialties = tuple(rng.sample(SPECIALTIES, rng.choice((1, 2))))
-        doctors.append(Doctor(f"m{number}", specialties))
+    Sem semente, cada chamada faz um novo sorteio. Uma semente explícita permite
+    reproduzir o cenário. O Prolog verifica cada escolha durante a construção;
+    a sequência usada nessa verificação não é entregue ao algoritmo de busca.
+    """
+    try:
+        from .prolog_bridge import generate_scenario
+    except ImportError:
+        from prolog_bridge import generate_scenario
 
-    special_groups = tuple(group for group in GROUP_WEIGHTS if group != "geral")
-    waiting = []
-    for number in range(1, num_patients + 1):
-        risk = rng.choice(tuple(RISK_WEIGHTS))
-        if rng.random() < 0.4:
-            groups = ("geral",)
-        else:
-            groups = tuple(rng.sample(special_groups, rng.choice((1, 2))))
-        waiting.append(Patient(f"p{number}", risk, groups))
-
-    return Scenario(doctors, waiting, queue_limit(num_patients, num_doctors))
+    data = generate_scenario(num_doctors, num_patients, seed)
+    doctors = [Doctor(did, tuple(specialties)) for did, specialties in data["doctors"]]
+    waiting = [Patient(pid, risk, tuple(groups)) for pid, risk, groups in data["patients"]]
+    return Scenario(doctors, waiting, data["queue_limit"], data["seed"])
